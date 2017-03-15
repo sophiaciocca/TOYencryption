@@ -1,0 +1,146 @@
+program encryption
+// Name: Sophia Ciocca
+// PennKey: sciocca
+// Recitation: 211
+//
+//
+// Input:   TOY word containing number of bits (max 16), word containing seed,
+            padded
+//          to 16 bits, word containing tap, then bits stored as 16-bit words of
+//          0x0000 or 0x0001 and terminated by 0xFFFF
+// Output:  data stream encrypted/decrypted using the specified LFSR
+// Remarks:  
+// -----------------------------------------------------------------------------
+
+//REGISTER MAP:
+// Register 1: seed length (after write out, seed length - 1)
+// Register 2: seed (and then updated seed)
+// Register 3: tap
+// Register 4: first bit of data
+// Register 5: seed moved over by (tap) bits
+// Register 6: the number 0001
+// Register 7: the tap digit of the seed
+// Register 8: new bit xored with FFFF
+// Register 9: leftmost digit of seed
+// Register A: ** "random number" - xor-ed tap digit * leftmost seed digit
+// Register B: seed shifted to the left by 1
+// Register C: 1C (the line number I need to go back to )
+// Register D: encrypted bit! (xored bit (R4) w/ random number (RA))
+// Register E: 00FF
+// Register F: FFFF (to be xored with new bit)
+
+//----------------------------------------------
+// READ SEED LENGTH, SEED, & TAP INTO REGISTERS
+//read seed length (bits) into Register 1
+//load is 8, load from mem[FF], put in register 1
+10: 81FF   read R[1]                     
+
+//read seed into register 2
+11: 82FF   read R[2]                     
+
+//read tap into register 3
+12: 83FF   read R[3]                     
+//----------------------------------------------
+
+//----------------------------------------------
+// PRINT SEED LENGTH, SEED, & TAP INTO STDOUT
+//read seed length( bits) from Register 1 to stdout (FF)
+13: 91FF   write R[1]                    
+
+//read seed from Register 2 to stdout (FF)
+14: 92FF   write R[2]                    
+
+//read tap from Register 3 to stdout (FF)
+15: 93FF   write R[3]           
+//----------------------------------------------
+
+//----------------------------------------------
+//PREPARING FOR LOOP - create FFFF in register
+//store FF in register E
+16: 7EFF   R[E] <- 00FF                  
+//store the number 8 in register F
+17: 7F08   R[F] <- 0008                  
+//now, value 00FF is in register E, and value 8 is in register F
+//shift FF over to the left by that register's value
+18: 5FEF   R[F] <- R[E] << R[F]          
+//now, register E holds 00FF still, and register F holds FF00
+//let's make that FFFF by adding E & F together
+19: 1FEF   R[F] <- R[E] + R[F]           
+//now, register F holds FFFF
+
+//----------------------------------------------
+// CONSTANTS
+//store the number 1 in a register
+1A: 7601   R[6] <- 0001  
+//get seedlength - 1, store in R1
+1B: 2116   R[1] <- R[1] - R[6] 
+//----------------------------------------------
+
+//----------------------------------------------
+// READ ONE BIT
+//read bit
+1C: 84FF   read R[4]                      
+//----------------------------------------------
+
+//----------------------------------------------
+// LOOP
+// we want lines 16 to 24 to loop over and over until we get to FFFF
+// if not FFFF, continue; if FFFF, skip down to HALT
+
+// xor new bit with FFFF (in register F), store that in R8
+1D: 484F   R[8] <- R[4] ^ R[F]           
+
+//if that's > 0, then continue down program
+
+//if that's 0, then skip down to halt
+1E: C829   if (R[8] == 0) goto 29        
+//----------------------------------------------
+
+//----------------------------------------------
+//GENERATE SINGLE RANDOM BIT(equivalent of LFSR.step();) 
+
+//#1: get tap      
+// shift seed (R2) right by tap (R3) bits, store that in new location. 
+1F: 6523 R[5] <- R[2] >> R[3]                          
+//"&" the above (R5) with the number 1 (R6).
+20: 3756   R[7] <- R[5] & R[6]           
+//now, the tap bit of the seed is in R7!
+
+//#2: get leftmost bit           
+//shift seed (R2) right by (seedlength - 1 (R1) bits), store in R9.
+21: 6921   R[9] <- R[2] >> R[1]           
+//now, leftmost bit of seed is in R9!
+22: 3996   R[9] <- R[9] & R[6]           
+
+//#3: "xor" those things (R7 & R9) together, store that in new register 
+23: 4A79   R[A] <- R[7] ^ R[9]             
+
+//#4: shift everything in seed (R2) to the left by 1 (R6), store in B
+24: 5B26   R[B] <- R[2] << R[6]            
+//now make last number the "xor" result above 
+//add together "xor" result (register A) & seed shifted left (register B);
+//(each thing will be a 0)
+25: 12BA   R[2] <- R[B] + R[A]             
+//now, new seed replaces old seed in R2!
+//----------------------------------------------
+
+//----------------------------------------------
+//ENCRYPT THE BIT WITH THE RANDOM NUMBER & WRITE ENCRYPTED BIT
+//Encrypt bit read in (R4) by "xor"-ing it with random bit (RA), store in RD
+26: 4D4A   R[D] <- R[4] ^ R[A]            
+//Print the encrypted bit
+27: 9DFF   write R[D]                     
+//----------------------------------------------
+
+//----------------------------------------------
+//START LOOP AGAIN           
+// jump back to line 1C (RC)
+28: C01C   goto 1C                         
+//----------------------------------------------
+
+//----------------------------------------------
+// HALT
+//write FFFF (replace blank with w/ R4)
+29: 94FF   write R[4]                       (last time - will be FFFF)
+2A: 0000   halt                                   
+//----------------------------------------------       
